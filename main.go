@@ -12,17 +12,21 @@ import (
 
 var wg sync.WaitGroup
 
-// testing
-// var outPath = "resources/test_out"
-// var imagePath = "resources/Images"
-// var dataPath = "resources/test_data_052426.csv"
+var dataPath string
+var outPath string
 
-// use defaults
-var outPath = "resources/objects_out"
-var imagePath = "/Volumes/pp5/Images"
-var dataPath = "resources/objects_data_052426.csv"
+// testing
+var imagePath = "resources/Images"
+
+// use
+// var imagePath = "/Volumes/pp5/Images"
 
 func main() {
+
+	log.Println("Prompting user for input and output")
+	dataPath, outPath = selectFiles()
+	log.Println("Input file: " + dataPath)
+	log.Println("Output directory: " + outPath)
 
 	// load image filepaths
 	log.Println("Collecting image paths from server")
