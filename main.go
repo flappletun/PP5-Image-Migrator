@@ -3,26 +3,39 @@ package main
 import (
 	"encoding/csv"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
-var outPath = "resources/out"
 var wg sync.WaitGroup
+
+// testing
+// var outPath = "resources/test_out"
+// var imagePath = "resources/Images"
+// var dataPath = "resources/test_data_052426.csv"
+
+// use defaults
+var outPath = "resources/objects_out"
+var imagePath = "/Volumes/pp5/Images"
+var dataPath = "resources/objects_data_052426.csv"
 
 func main() {
 
 	// load image filepaths
-	imagePaths := collectImagePaths("resources/Yoakum")
-	println("Found", len(imagePaths), "images")
+	log.Println("Collecting image paths from server")
+	imagePaths := collectImagePaths(imagePath)
+	log.Println("Found", len(imagePaths), "images")
 
 	// load record data from csv file
-	recordMap := loadData("resources/test_data.csv")
-	println("Loaded", len(recordMap), "records")
+	log.Println("Loading record data from csv file")
+	recordMap := loadData(dataPath)
+	log.Println("Loaded", len(recordMap), "records")
 
 	// delete output directory if it exists
+	log.Println("Creating output directory")
 	info, err := os.Stat(outPath)
 	if os.IsNotExist(err) {
 		os.MkdirAll(outPath, os.ModePerm)
@@ -40,16 +53,20 @@ func main() {
 func imageCopyParallel(imagePaths []string, recordMap map[string]Record) {
 	// launch copier goroutines
 	var pathChannel = make(chan string, len(imagePaths))
-	for range imagePaths {
-		wg.Add(1)
-		go imageCopyWorker(pathChannel, recordMap)
+	numGR := 0
+	for i := range imagePaths {
+		path := filepath.Base(imagePaths[i])
+		path = strings.ReplaceAll(path, ".jpg", ".JPG")
+		if recordMap[path].ObjectID != "" {
+			numGR++
+			wg.Add(1)
+			go imageCopyWorker(pathChannel, recordMap)
+			pathChannel <- imagePaths[i]
+		}
 	}
-
-	// give the workers the paths to copy
-	for _, path := range imagePaths {
-		pathChannel <- path
-	}
+	log.Printf("Launched %d goroutines\n", numGR)
 	wg.Wait()
+	log.Printf("%d goroutines finished\n", numGR)
 }
 
 func imageCopySequential(imagePaths []string, recordMap map[string]Record) {
@@ -77,23 +94,22 @@ func loadData(dataPath string) map[string]Record {
 	}
 
 	// build record structs
-	recordMap := make(map[string]Record, len(data))
+	recordMap := make(map[string]Record, 2*len(data))
 
 	/**********************/
 	/*  CHANGE THIS LATER */
-	objectIDIndex := 0
-	imageFileIndex := 1
+	objectIDIndex := -1
+	imageFileIndex := -1
 	/**********************/
 
 	for i, row := range data {
 		// find which columns are object ID and image filepath
 		if i == 0 {
 			for j, column := range row {
-				println("Column", j, "is", column)
 				switch column {
-				case "objectid":
+				case "OBJECTID":
 					objectIDIndex = j
-				case "imagefile":
+				case "IMAGEFILE":
 					imageFileIndex = j
 				}
 			}
@@ -102,9 +118,11 @@ func loadData(dataPath string) map[string]Record {
 			}
 		} else {
 			// add record for each row
-			recordMap[row[imageFileIndex]] = Record{
+			formattedPath := strings.ReplaceAll(row[imageFileIndex], "\\", "/")
+			base := filepath.Base(formattedPath)
+			recordMap[base] = Record{
 				ObjectID: row[objectIDIndex],
-				filePath: row[imageFileIndex],
+				filePath: formattedPath,
 			}
 		}
 	}
@@ -124,7 +142,8 @@ func imageCopyWorker(pathChannel chan string, recordMap map[string]Record) {
 	defer in.Close()
 
 	// create a destination file
-	newName := recordMap[filepath.Base(path)].ObjectID + ".jpg"
+	key := strings.ReplaceAll(filepath.Base(path), ".jpg", ".JPG")
+	newName := recordMap[key].ObjectID + ".jpg"
 	out, err := os.Create(filepath.Join(outPath, newName))
 	if err != nil {
 		panic(err)
